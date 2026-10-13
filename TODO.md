@@ -1,7 +1,7 @@
 # TODO
 
 Open work for rrx-core. Benchmarks run from
-[ren-bench](../../../ren-bench/wtree/_repo_/README.md); performance defects
+[ren-bench](https://github.com/wiltonlazary/ren-bench); performance defects
 are listed here.
 
 - [ ] Async parity: the async workload runs at 1.16 times the fastest

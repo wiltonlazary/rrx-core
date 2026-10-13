@@ -3,7 +3,7 @@
 Fine-grained reactivity on an integer-id graph: signals, memos, derivations,
 effects, scopes, contexts, tasks, stores and keyed lists, in plain JavaScript
 with JSDoc types, strict `tsc` checking and generated declarations. rrx-core is the
-reactive core; [ren-core](../../../ren-core/wtree/_repo_) is the renderer-neutral
+reactive core; [ren-core](https://github.com/wiltonlazary/ren-core) is the renderer-neutral
 component layer built on it, and the renderers are packages of their own on
 top of ren-core (ren-dom, ren-canv, ren-skia, ren-three, ren-html, ren-json).
 
@@ -635,6 +635,6 @@ npm test           # declarations, tsc --checkJs --strict, the TypeScript consum
 
 The reactivity and disposal harnesses, the scenario definitions with their
 checksums, the pinned competitors and the recorded results live in
-[ren-bench](../../../ren-bench/wtree/_repo_/bench/reactivity/README.md).
+[ren-bench](https://github.com/wiltonlazary/ren-bench/blob/main/bench/reactivity/README.md).
 Run benchmark commands from that checkout. Open performance work for
 rrx-core is in [TODO.md](TODO.md).

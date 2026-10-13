@@ -2,7 +2,7 @@
 
 Standing rules for agents working in this checkout.
 
-Read the workspace layer first: `../../../AGENTS.md` and `../../../.ai/config/`
+Read the workspace layer first: [`../../../AGENTS.md`](https://github.com/wiltonlazary/rui/blob/main/AGENTS.md) and [`../../../.ai/config/`](https://github.com/wiltonlazary/rui/tree/main/.ai/config)
 (javascript.md, design.md, benchmarks.md, concepts.md, resources.md,
 stability.md, git.md).
 Then read [README.md](README.md) for the API, design and benchmarks, and
@@ -14,7 +14,7 @@ rrx-core is the reactive core, a production library packaged as the `rrx-core`
 package: signals, memos, derivations, effects, scopes, contexts, tasks,
 stores and keyed lists on an integer-id graph. The renderer-neutral
 component layer is the sibling project ren-core
-(`../../../ren-core/wtree/_repo_`), which depends on this checkout through a
+([`../../../ren-core/wtree/_repo_`](https://github.com/wiltonlazary/ren-core)), which depends on this checkout through a
 `file:` link. The renderers are packages of
 their own on top of ren-core: ren-dom, ren-canv, ren-skia, ren-three,
 ren-html and ren-json.
