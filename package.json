@@ -1,0 +1,56 @@
+{
+  "name": "rrx-core",
+  "version": "0.1.0",
+  "description": "Fine-grained reactivity on an integer-id graph: signals, memos, effects, scopes, contexts, tasks, stores and keyed lists, with no runtime dependencies.",
+  "type": "module",
+  "private": true,
+  "license": "UNLICENSED",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "src",
+    "types",
+    "README.md"
+  ],
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./store": {
+      "types": "./types/store.d.ts",
+      "default": "./src/store.js"
+    },
+    "./arena": {
+      "types": "./types/arena.d.ts",
+      "default": "./src/arena.js"
+    },
+    "./core": {
+      "types": "./types/core.d.ts",
+      "default": "./src/core.js"
+    },
+    "./context": {
+      "types": "./types/context.d.ts",
+      "default": "./src/context.js"
+    }
+  },
+  "imports": {
+    "#mode": {
+      "development": "./src/mode.dev.js",
+      "default": "./src/mode.js"
+    }
+  },
+  "scripts": {
+    "types": "node scripts/types.mjs",
+    "check": "tsc -p tsconfig.json",
+    "test": "node scripts/types.mjs && tsc -p tsconfig.json && tsc -p test/types/tsconfig.json && node --test test/*.test.js",
+    "prepare": "node scripts/types.mjs",
+    "prepack": "node scripts/types.mjs"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}
