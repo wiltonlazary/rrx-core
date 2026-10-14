@@ -3,8 +3,15 @@
   "version": "0.1.0",
   "description": "Fine-grained reactivity on an integer-id graph: signals, memos, effects, scopes, contexts, tasks, stores and keyed lists, with no runtime dependencies.",
   "type": "module",
-  "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wiltonlazary/rrx-core.git"
+  },
+  "homepage": "https://github.com/wiltonlazary/rrx-core#readme",
+  "bugs": {
+    "url": "https://github.com/wiltonlazary/rrx-core/issues"
+  },
   "sideEffects": false,
   "engines": {
     "node": ">=20"

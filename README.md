@@ -7,8 +7,9 @@ reactive core; [ren-core](https://github.com/wiltonlazary/ren-core) is the rende
 component layer built on it, and the renderers are packages of their own on
 top of ren-core (ren-dom, ren-canv, ren-skia, ren-three, ren-html, ren-json).
 
-The package is named `rrx-core`, and `package.json` is
-`private`. There are no runtime dependencies.
+The package is published on npm as `@maxenve/rrx-core` under the MIT license;
+install it under its import name: `npm install rrx-core@npm:@maxenve/rrx-core`.
+There are no runtime dependencies.
 
 | Entry | Contents |
 | --- | --- |
