@@ -24,7 +24,7 @@ ren-html and ren-json.
 - Checkout: `wtree/_repo_` (branch `main`); feature branches are sibling
   worktrees under `wtree/<name>`, each with its own build directory
   `build/<name>_<version>` and its own `artifact` link to it.
-- Build output: `build/_repo__0.1.2`, reached through the ignored `artifact`
+- Build output: `build/_repo__0.1.3`, reached through the ignored `artifact`
   link. Scratch, profiles and bench artifacts go to `artifact/tmp/<task>/`,
   never into tracked paths or outside this project.
 - `types/` is generated (`scripts/types.mjs`) and ignored; the package's
