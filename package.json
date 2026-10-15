@@ -1,6 +1,6 @@
 {
   "name": "rrx-core",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Fine-grained reactivity on an integer-id graph: signals, memos, effects, scopes, contexts, tasks, stores and keyed lists, with no runtime dependencies.",
   "type": "module",
   "license": "MIT",
