@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   $root, $signal, $read, $write, $memo, $effect, $watch, $flush, $dispose, $scope, $enter, $stop, $stats, $cleanup, $kind,
   $store, $at, $put, $raw, $reuse, $update, $mirror, $overlay, $keyed, $rows, $positions, $select, $merge, $split,
-  $catch, $owner, $batch,
+  $catch, $owner, $batch, $auto,
 } from '../src/index.js';
 
 describe('rrx-core stores', () => {
@@ -137,6 +137,20 @@ describe('rrx-core stores', () => {
     overlay.settle(dropped);
     $flush(root);
     assert.deepEqual(seen, [1, 11, 12]);
+    $dispose(root);
+  });
+  it('commits an overlay layer in one step under $auto: no reader sees the store revert', () => {
+    const root = $root('app');
+    $auto(root, true);
+    const store = $store(root, { count: 10 });
+    const overlay = $overlay(root, store);
+    /** @type {number[]} */
+    const seen = [];
+    $watch(root, () => overlay.read(['count']), value => void seen.push(value));
+    const ticket = overlay.apply(['count'], n => n + 1);
+    overlay.commit(ticket);
+    assert.deepEqual(seen, [10, 11]);
+    assert.equal($raw(store).count, 11);
     $dispose(root);
   });
 });

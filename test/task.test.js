@@ -257,6 +257,21 @@ describe('rrx-core tasks', () => {
     $dispose(root);
   });
 
+  it('commits an optimistic layer in one step under $auto: no reader sees the base revert', () => {
+    const root = $root('app');
+    $auto(root, true);
+    const base = $signal(root, 10);
+    const optimistic = $optimistic(root, base);
+    /** @type {number[]} */
+    const seen = [];
+    $effect(root, () => void seen.push($read(optimistic.value)));
+    const ticket = optimistic.apply(n => n + 1);
+    optimistic.commit(ticket);
+    assert.deepEqual(seen, [10, 11]);
+    assert.equal($read(base), 11);
+    $dispose(root);
+  });
+
   it('acts optimistically: commit on success, drop on failure, stop on demand', () => {
     const root = $root('app');
     const base = $signal(root, 0);

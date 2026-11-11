@@ -669,8 +669,14 @@ export function $optimistic(root, base) {
       remove(ticket);
     },
     commit: ticket => {
-      const found = remove(ticket);
-      if (found !== undefined) $write(base, found.update($untrack(root, () => $read(base))));
+      // One step: under $auto the layer's removal would flush before the base is written, showing the base without it.
+      hold(root);
+      try {
+        const found = remove(ticket);
+        if (found !== undefined) $write(base, found.update($untrack(root, () => $read(base))));
+      } finally {
+        unhold(root);
+      }
     },
     pending: $memo(root, () => $read(layers).length > 0),
   };

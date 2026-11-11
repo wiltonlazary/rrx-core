@@ -412,8 +412,14 @@ export function $overlay(root, store) {
     },
     /** @param {number} ticket */
     commit: ticket => {
-      const found = remove(ticket);
-      if (found !== undefined) $put(store, found.path, found.update);
+      // One step: under $auto the layer's removal would flush before the store is written, showing the store without it.
+      hold(root);
+      try {
+        const found = remove(ticket);
+        if (found !== undefined) $put(store, found.path, found.update);
+      } finally {
+        unhold(root);
+      }
     },
     pending: $memo(root, () => $read(layers).length > 0),
   };
