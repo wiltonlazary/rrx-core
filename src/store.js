@@ -3,12 +3,14 @@
 //
 // A trie of branches mirrors the paths that computations read. A branch's
 // cell is an unowned signal created on the first tracked read and discarded
-// when its last observer leaves. Put replaces the value at a path by copying
+// when its last observer leaves (at the flush's end while something still
+// reads it, and when what read it never observed it and is gone). Put
+// replaces the value at a path by copying
 // the path only, then writes the cells of the ancestors and descendants.
 // Descendant subtrees whose reference did not change are skipped: every cell
 // below them would be written its own value (README §Design choices).
 
-import { $signal, $read, $write, $watch, $memo, $untrack, $equals, $whenUnwatched, $discard, $unowned, $observer, hold, unhold, live, $update as change, Graph, pull } from './core.js';
+import { $signal, $read, $write, $watch, $memo, $untrack, $equals, $whenUnwatched, $discard, $unowned, $observer, $after, hold, unhold, live, $update as change, Graph, pull } from './core.js';
 import { isContext } from './context.js';
 
 /** @typedef {string | number} Key */
@@ -23,6 +25,8 @@ class Branch {
     this.cell = null;
     /** @type {Map<Key, Branch> | null} */
     this.children = null;
+    /** A check of the cell waits for the flush's end, and why (see check); 0 when none. */
+    this.due = 0;
   }
 }
 
@@ -104,20 +108,57 @@ export function $at(store, path) {
     const target = b;
     /** @type {import('./core.js').Writable<any>} */
     const made = $unowned(R, () => $signal(R, valueAt(store.raw, path, 0)));
-    // The last observer leaving frees the cell and prunes empty branches.
+    // The last observer leaving frees the cell: at once when nothing reads it
+    // any more. While something still reads it (a memo observes what it read
+    // only when its run returns), the cell is checked at the flush's end.
     $whenUnwatched(made, () => {
-      target.cell = null;
-      $discard(made);
-      let current = target;
-      while (current.parent !== null && current.cell === null && (current.children === null || current.children.size === 0)) {
-        const parent = current.parent;
-        /** @type {Map<Key, Branch>} */ (parent.children).delete(/** @type {Key} */ (current.key));
-        current = parent;
-      }
+      if (made.subs === null) free(target, made);
+      else check(R, target, LEFT);
     });
-    cell = b.cell = made;
+    b.cell = made;
+    const value = $read(made);
+    // A reader that never observes it (a memo nothing watches, a probe) gives
+    // no such signal: the cell it leaves unobserved is checked then too.
+    if (made.watchers === 0) check(R, target, UNSEEN);
+    return value;
   }
   return $read(cell);
+}
+
+/** Frees a branch's cell and prunes the branches left empty. @param {Branch} b @param {import('./core.js').Writable<any>} cell */
+function free(b, cell) {
+  b.cell = null;
+  $discard(cell);
+  let current = b;
+  while (current.parent !== null && current.cell === null && (current.children === null || current.children.size === 0)) {
+    const parent = current.parent;
+    /** @type {Map<Key, Branch>} */ (parent.children).delete(/** @type {Key} */ (current.key));
+    current = parent;
+  }
+}
+
+/** Why a cell is checked: nothing observed it yet, or its last observer left. */
+const UNSEEN = 1;
+const LEFT = 2;
+
+/**
+ * Checks a branch's cell at the flush's end (`$after`, a safe point: no
+ * computation is running). A cell its last observer left is freed if it is
+ * still unobserved, and a memo that still read it reads the path again. One
+ * never observed is freed once nothing reads it either, so a memo nothing
+ * watches keeps its value.
+ * @param {import('./core.js').Graph} R @param {Branch} b @param {number} why
+ */
+function check(R, b, why) {
+  const due = b.due;
+  if (due < why) b.due = why;
+  if (due !== 0) return;
+  $after(R, () => {
+    const left = b.due === LEFT;
+    b.due = 0;
+    const cell = b.cell;
+    if (cell !== null && cell.watchers === 0 && (left || cell.subs === null)) free(b, cell);
+  });
 }
 
 /**

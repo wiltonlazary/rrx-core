@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   $root, $signal, $read, $write, $memo, $effect, $watch, $flush, $dispose, $scope, $enter, $stop, $stats, $cleanup, $kind,
   $store, $at, $put, $raw, $reuse, $update, $mirror, $overlay, $keyed, $rows, $positions, $select, $merge, $split,
-  $catch, $owner, $batch, $auto,
+  $catch, $owner, $batch, $auto, $cancel, $discard, $touch,
 } from '../src/index.js';
 
 describe('rrx-core stores', () => {
@@ -59,6 +59,59 @@ describe('rrx-core stores', () => {
     );
     assert.equal($stats(root).nodes, before + 2);
     $stop(scope);
+    assert.equal($stats(root).nodes, before);
+    $dispose(root);
+  });
+
+  it('keeps the cell a memo read in the run that saw its last observer leave', () => {
+    const root = $root('app');
+    const store = $store(root, { a: 1 });
+    const first = $effect(root, () => {
+      $at(store, ['a']);
+    });
+    // The memo reads the path, then the path's only observer leaves, all in its first run.
+    const double = $memo(root, () => {
+      const value = $at(store, ['a']) * 2;
+      $cancel(first);
+      return value;
+    });
+    /** @type {number[]} */
+    const seen = [];
+    $effect(root, () => void seen.push($read(double)));
+    $put(store, ['a'], 2);
+    $flush(root);
+    assert.deepEqual(seen, [2, 4], 'the memo still follows the path');
+    $dispose(root);
+  });
+
+  it('frees the cells of readers that never observe them, keeping a memo nothing watches', () => {
+    const root = $root('app');
+    const store = $store(root, { a: 1, b: 1, c: 1 });
+    const before = $stats(root).nodes;
+    // A probe reads a path and is gone: the cell has no reader and never had an observer.
+    $touch(root, () => $at(store, ['a']));
+    $flush(root);
+    assert.equal($stats(root).nodes, before, 'the cell a probe read is freed at the flush');
+    // A memo nothing watches keeps its cell, and so its value across unrelated writes.
+    let runs = 0;
+    const lazy = $memo(root, () => (runs++, $at(store, ['b']) + 1));
+    assert.equal($read(lazy), 2);
+    $put(store, ['c'], 2);
+    $flush(root);
+    assert.equal($read(lazy), 2);
+    assert.equal(runs, 1, 'an unrelated write does not rerun it');
+    $put(store, ['b'], 5);
+    assert.equal($read(lazy), 6);
+    // Its last observer leaving while the memo still reads it frees the cell at the flush.
+    const watcher = $effect(root, () => void $at(store, ['b']));
+    $cancel(watcher);
+    assert.equal($stats(root).nodes, before + 2, 'the memo and the cell it still reads');
+    $flush(root);
+    assert.equal($stats(root).nodes, before + 1);
+    assert.equal($read(lazy), 6, 'the memo reads the path again');
+    // A reader gone before the flush leaves nothing.
+    $discard(lazy);
+    $flush(root);
     assert.equal($stats(root).nodes, before);
     $dispose(root);
   });
