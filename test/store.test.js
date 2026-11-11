@@ -638,6 +638,54 @@ describe('rrx-core lists and selection', () => {
     }
   });
 
+  it('keeps a key function pure: a write in it throws, before and after a build, retiring or not', () => {
+    for (const [name, map] of /** @type {const} */ ([
+      ['Keyed', $keyed],
+      ['Rows', $rows],
+    ])) {
+      for (const removal of [undefined, { retire: true }]) {
+        const label = `${name}${removal === undefined ? '' : ', retiring'}`;
+        const root = $root('app');
+        const written = $signal(root, 0);
+        const built = $signal(root, 0);
+        /** The id whose key writes; 0 for none. */
+        let writing = 1;
+        const items = $signal(root, [{ id: 1 }, { id: 2 }]);
+        const rows = /** @type {any} */ (map)(root, () => $read(items), (/** @type {{ id: number }} */ item) => {
+          if (item.id === writing) $write(written, item.id);
+          return item.id;
+        }, () => $write(built, $untrack(root, () => $read(built)) + 1), removal);
+        /** A change of the items, so a failed pass runs again. @param {number[]} ids */
+        const put = ids => $write(items, ids.map(id => ({ id })));
+        // A first pass: the first key of all writes.
+        assert.throws(() => $read(rows), /cannot write/, `${label}: a first key`);
+        // The key of an item that follows a row built in the same pass.
+        writing = 2;
+        put([1, 2]);
+        assert.throws(() => $read(rows), /cannot write/, `${label}: a key after a build`);
+        assert.equal($read(built), 1, `${label}: the build before it wrote`);
+        writing = 0;
+        put([1, 2]);
+        assert.equal($read(rows).length, 2, `${label}: with a pure key the list maps`);
+        assert.equal($read(built), 3, `${label}: its builds writing`);
+        // An update that keeps a row, builds one, then reads a writing key.
+        writing = 4;
+        put([1, 3, 4]);
+        assert.throws(() => $read(rows), /cannot write/, `${label}: a key after a build, in an update`);
+        assert.equal($read(built), 4, label);
+        // An update that keeps no row (the retiring list asks the keys first).
+        writing = 7;
+        put([6, 7]);
+        assert.throws(() => $read(rows), /cannot write/, `${label}: a key of an update that keeps no row`);
+        assert.equal($read(written), 0, `${label}: no key wrote`);
+        writing = 0;
+        put([6, 7]);
+        assert.equal($read(rows).length, 2, label);
+        $dispose(root);
+      }
+    }
+  });
+
   it('merges and splits properties', () => {
     const merged = $merge([{ a: 1, b: 2 }, () => ({ b: 3 }), null]);
     assert.equal(merged('a'), 1);

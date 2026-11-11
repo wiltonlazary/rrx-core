@@ -387,18 +387,28 @@ function keyed(root, read, key, build, lazy, limit) {
     /** Each kept row at its new position (none on a first pass). @type {(Row<T, U> | undefined)[] | null} */
     const moved = rows.size === 0 ? null : new Array(items.length);
     let kept = 0;
-    // The rows build inside this computation, which is pure: the pass runs
-    // lifted (once, not per row), so a build and the first run of each effect
-    // it makes may write, as those effects may on every later run.
+    // The rows build inside this computation, which is pure: the builds run
+    // lifted, so a build and the first run of each effect it makes may write,
+    // as those effects may on every later run. A key function is the list's
+    // own read and stays pure: the pass is lifted at its first build, and
+    // again only after a key ran since (a list keyed by the item: once).
     const pure = root.pure;
-    root.pure = false;
+    let lifted = false;
     try {
       // The kept rows take their items and places only once the whole pass
       // succeeded (every key unique, every build done), so a failed update
       // leaves them as they were.
       for (let position = 0; position < items.length; position++) {
         const item = items[position];
-        const name = key === null ? item : key(item);
+        /** @type {unknown} */
+        let name = item;
+        if (key !== null) {
+          if (lifted) {
+            root.pure = pure;
+            lifted = false;
+          }
+          name = key(item);
+        }
         if (next.has(name)) throw new Error('RRX: duplicate $keyed key');
         const old = rows.size === 0 ? undefined : rows.get(name);
         let entry;
@@ -408,6 +418,10 @@ function keyed(root, read, key, build, lazy, limit) {
           /** @type {(Row<T, U> | undefined)[]} */ (moved)[position] = old;
         } else {
           if (box === null) box = container(root, owner);
+          if (!lifted) {
+            root.pure = false;
+            lifted = true;
+          }
           entry = lazy ? lazyRow(root, box, item, position, build) : row(root, box, item, position, build);
         }
         next.set(name, entry);
