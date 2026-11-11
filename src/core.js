@@ -3259,6 +3259,11 @@ function sweepRelease(R, x, at) {
   return cleanups;
 }
 
+/** True for the application of an observer suspended in a transition. @param {Application | null} app */
+function suspended(app) {
+  return app !== null && app.hold !== null;
+}
+
 /** @param {Graph} R @param {ScopeNode} top */
 function stopScope(R, top) {
   /** @type {any} */
@@ -3276,9 +3281,10 @@ function stopScope(R, top) {
           cur = scope;
           continue;
         }
-      } else if (child.live === ALIVE && child.cleanup === undefined && !R.closing) {
-        // A plain node (not running, no cleanup to run) is freed here, as the
-        // tail of its owner's list; release would do the same through calls.
+      } else if (child.live === ALIVE && child.cleanup === undefined && !R.closing && !suspended(/** @type {Node<any>} */ (child).apply)) {
+        // A plain node (not running, no cleanup to run, not suspended in a
+        // transition, which cancel leaves) is freed here, as the tail of its
+        // owner's list; release would do the same through calls.
         const n = /** @type {Node<any>} */ (child);
         if (n.extra !== null && n.extra.flight !== NONE) superseded(R, n);
         n.mode = 0;

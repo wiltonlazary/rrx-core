@@ -5,7 +5,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  $root, $signal, $read, $write, $memo, $render, $watch, $effect, $dispose, $auto, $batch, $task, $pending, $lastReady, $cancel, $flush, $catch, $outcome, $scope, $enter,
+  $root, $signal, $read, $write, $memo, $render, $watch, $effect, $dispose, $auto, $batch, $task, $pending, $lastReady, $cancel, $flush, $catch, $outcome, $scope, $enter, $stop,
 } from '../src/index.js';
 
 function deferred() {
@@ -168,6 +168,24 @@ describe('rrx-core transitions', () => {
     assert.deepEqual(screen, []);
     $cancel(shownUser.observer);
     assert.deepEqual(screen, ['id=2'], 'nothing waits any more: the held id applies');
+    $dispose(root);
+  });
+
+  it('releases held work when the scope of the suspended observer stops', async () => {
+    const { root, id, user, answer } = app();
+    /** @type {string[]} */
+    const screen = [];
+    await answer(1, 'ada');
+    $render(root, () => $read(id), v => void screen.push(`id=${v}`));
+    const scope = $scope(root, null);
+    $enter(scope, () => $render(root, () => $read(user), v => void screen.push(`user=${v}`)));
+    screen.length = 0;
+    $write(id, 2);
+    assert.deepEqual(screen, []);
+    $stop(scope);
+    assert.deepEqual(screen, ['id=2'], 'nothing waits any more: the held id applies');
+    $write(id, 3);
+    assert.deepEqual(screen, ['id=2', 'id=3'], 'and later writes apply as usual');
     $dispose(root);
   });
 
