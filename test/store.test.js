@@ -116,6 +116,45 @@ describe('rrx-core stores', () => {
     $dispose(root);
   });
 
+  it('frees in sweeps the cells whose only reader, a memo nothing watches, is gone', () => {
+    const root = $root('app');
+    const store = $store(root, { live: 1 });
+    // One memo nothing watches stays through every sweep, with its cell and value.
+    let runs = 0;
+    const lasting = $memo(root, () => (runs++, $at(store, ['live']) + 1));
+    assert.equal($read(lasting), 2);
+    $flush(root);
+    const before = $stats(root).nodes;
+    // Each of the others reads a path of its own and ends after its flush:
+    // it never observed its cell, so its end gives the cell no signal.
+    let most = 0;
+    for (let i = 0; i < 1000; i++) {
+      const lazy = $memo(root, () => $at(store, ['k' + i]));
+      $read(lazy);
+      $flush(root);
+      $discard(lazy);
+      $flush(root);
+      most = Math.max(most, $stats(root).nodes - before);
+    }
+    assert.ok(most <= 64, `the cells left behind stay bounded (${most})`);
+    $put(store, ['k0'], 1);
+    $flush(root);
+    assert.equal($read(lasting), 2);
+    assert.equal(runs, 1, 'the lasting memo kept its cell: no sweep reran it');
+    $put(store, ['live'], 5);
+    assert.equal($read(lasting), 6, 'and it still follows its path');
+    // Cells read together and all still read are all kept; none is freed early.
+    const many = Array.from({ length: 200 }, (_, i) => $memo(root, () => $at(store, ['m' + i])));
+    for (const memo of many) $read(memo);
+    $flush(root);
+    const full = $stats(root).nodes;
+    for (let i = 0; i < 200; i++) $put(store, ['m' + i], i);
+    $flush(root);
+    assert.equal($stats(root).nodes, full, 'a cell a memo still reads is never swept');
+    assert.deepEqual(many.map(memo => $read(memo)), Array.from({ length: 200 }, (_, i) => i));
+    $dispose(root);
+  });
+
   it('merges fields, mirrors and keeps row identity', () => {
     const root = $root('app');
     const store = $store(root, { form: { a: 1, b: 2 } });

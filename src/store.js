@@ -4,7 +4,9 @@
 // A trie of branches mirrors the paths that computations read. A branch's
 // cell is an unowned signal created on the first tracked read and discarded
 // when its last observer leaves (at the flush's end while something still
-// reads it, and when what read it never observed it and is gone). Put
+// reads it, and when what read it never observed it and is gone). A cell
+// that only a memo nothing watches reads is kept with that memo's value and
+// freed, once that memo is gone, by a sweep of such cells (see keep). Put
 // replaces the value at a path by copying
 // the path only, then writes the cells of the ancestors and descendants.
 // Descendant subtrees whose reference did not change are skipped: every cell
@@ -27,6 +29,8 @@ class Branch {
     this.children = null;
     /** A check of the cell waits for the flush's end, and why (see check); 0 when none. */
     this.due = 0;
+    /** Listed among the store's cells that only a memo nothing watches reads (see keep). */
+    this.kept = false;
   }
 }
 
@@ -42,6 +46,10 @@ export class Box {
     this.root = root;
     this.raw = raw;
     this.index = new Branch(null, undefined);
+    /** The branches whose cell only a memo nothing watches reads (see keep). @type {Branch[]} */
+    this.kept = [];
+    /** The length of `kept` at which it is swept. */
+    this.limit = SWEEP;
   }
 }
 
@@ -113,13 +121,13 @@ export function $at(store, path) {
     // only when its run returns), the cell is checked at the flush's end.
     $whenUnwatched(made, () => {
       if (made.subs === null) free(target, made);
-      else check(R, target, LEFT);
+      else check(store, target, LEFT);
     });
     b.cell = made;
     const value = $read(made);
     // A reader that never observes it (a memo nothing watches, a probe) gives
     // no such signal: the cell it leaves unobserved is checked then too.
-    if (made.watchers === 0) check(R, target, UNSEEN);
+    if (made.watchers === 0) check(store, target, UNSEEN);
     return value;
   }
   return $read(cell);
@@ -145,20 +153,57 @@ const LEFT = 2;
  * Checks a branch's cell at the flush's end (`$after`, a safe point: no
  * computation is running). A cell its last observer left is freed if it is
  * still unobserved, and a memo that still read it reads the path again. One
- * never observed is freed once nothing reads it either, so a memo nothing
- * watches keeps its value.
- * @param {import('./core.js').Graph} R @param {Branch} b @param {number} why
+ * never observed is freed once nothing reads it either; while a memo nothing
+ * watches reads it, it is kept, so that memo keeps its value.
+ * @param {Box<any>} store @param {Branch} b @param {number} why
  */
-function check(R, b, why) {
+function check(store, b, why) {
   const due = b.due;
   if (due < why) b.due = why;
   if (due !== 0) return;
-  $after(R, () => {
+  $after(store.root, () => {
     const left = b.due === LEFT;
     b.due = 0;
     const cell = b.cell;
-    if (cell !== null && cell.watchers === 0 && (left || cell.subs === null)) free(b, cell);
+    if (cell === null || cell.watchers !== 0) return;
+    if (left || cell.subs === null) free(b, cell);
+    else keep(store, b);
   });
+}
+
+/** The fewest kept cells a sweep waits for. */
+const SWEEP = 64;
+
+/**
+ * Lists a cell that only a memo nothing watches reads. Such a memo observes
+ * nothing, so its end gives the cell no signal: the listed cells are swept,
+ * each time the list has doubled since the last sweep (amortized O(1) per
+ * cell, and no hook per reader), and those nothing reads any more are freed.
+ * Called at a safe point (see check).
+ * @param {Box<any>} store @param {Branch} b
+ */
+function keep(store, b) {
+  if (b.kept) return;
+  b.kept = true;
+  const list = store.kept;
+  list.push(b);
+  if (list.length < store.limit) return;
+  let n = 0;
+  for (let i = 0; i < list.length; i++) {
+    const kept = list[i];
+    const cell = kept.cell;
+    // An observed cell is freed by its last observer leaving, as any is.
+    if (cell !== null && cell.watchers === 0) {
+      if (cell.subs !== null) {
+        list[n++] = kept;
+        continue;
+      }
+      free(kept, cell);
+    }
+    kept.kept = false;
+  }
+  list.length = n;
+  store.limit = Math.max(SWEEP, n * 2);
 }
 
 /**
