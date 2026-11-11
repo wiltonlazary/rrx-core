@@ -228,6 +228,66 @@ for (const [name, g] of /** @type {[string, any][]} */ ([['records', records], [
       $dispose(root);
     });
 
+    it('runs an effect and applies a Watch whose cleanup throws, then delivers the failure', () => {
+      const root = $root('app');
+      const s = $signal(root, 0);
+      const caught = [];
+      const seen = [];
+      const shown = [];
+      const cleaned = [];
+      const scope = $scope(root, null);
+      $catch(scope, error => void caught.push(error.message));
+      $enter(scope, () => {
+        $effect(root, () => {
+          const v = $read(s);
+          seen.push(v);
+          return () => {
+            cleaned.push(`effect ${v}`);
+            if (v === 0) throw new Error('effect cleanup');
+          };
+        });
+        $watch(root, () => $read(s), v => {
+          shown.push(v);
+          return () => {
+            cleaned.push(`watch ${v}`);
+            if (v === 0) throw new Error('watch cleanup');
+          };
+        });
+      });
+      $write(s, 1);
+      $flush(root);
+      assert.deepEqual(seen, [0, 1], 'the effect ran for the change');
+      assert.deepEqual(shown, [0, 1], 'the value was applied');
+      assert.deepEqual(caught, ['effect cleanup', 'watch cleanup'], 'each failure reached the boundary');
+      $write(s, 2);
+      $flush(root);
+      assert.deepEqual(seen, [0, 1, 2]);
+      assert.deepEqual(shown, [0, 1, 2]);
+      assert.deepEqual(cleaned, ['effect 0', 'watch 0', 'effect 1', 'watch 1'], 'the cleanups those runs returned were kept');
+      assert.equal(caught.length, 2);
+      // A cleanup and the run after it both fail: both failures are delivered.
+      const t = $signal(root, 0);
+      $enter(scope, () => {
+        $effect(root, () => {
+          if ($read(t) === 1) throw new Error('effect run');
+          return () => {
+            throw new Error('second cleanup');
+          };
+        });
+        $watch(root, () => $read(t), v => {
+          if (v === 1) throw new Error('watch application');
+          return () => {
+            throw new Error('third cleanup');
+          };
+        });
+      });
+      caught.length = 0;
+      $write(t, 1);
+      $flush(root);
+      assert.deepEqual(caught, ['second cleanup', 'effect run', 'third cleanup', 'watch application']);
+      $dispose(root);
+    });
+
     it('grows a lone queued effect into an ordered reentrant batch', () => {
       for (const deferred of [false, true]) {
         const root = $root('app');

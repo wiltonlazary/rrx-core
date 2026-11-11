@@ -1936,7 +1936,41 @@ function cycled() {
 function rerun(R, x) {
   const cleanup = x.cleanup;
   x.cleanup = undefined;
-  if (typeof cleanup === 'function') untracked(R, cleanup);
+  if (typeof cleanup !== 'function') return;
+  try {
+    untracked(R, cleanup);
+  } catch (error) {
+    spoiled(R, x, error);
+  }
+}
+
+/**
+ * An effect's cleanup threw before its rerun: the run is made all the same
+ * (here, counted once; execute's own stops at the throw), then the cleanup's
+ * failure is raised, which the flush delivers. When the run fails too, the
+ * cleanup's failure goes to the boundary first and the run's is raised.
+ * @param {Graph} R @param {Node<any>} x @param {any} error @returns {never}
+ */
+function spoiled(R, x, error) {
+  const owner = x.owner;
+  x.version--;
+  try {
+    execute(R, x);
+  } catch (also) {
+    failed(R, owner, error);
+    throw also;
+  }
+  throw error;
+}
+
+/** Runs a cleanup; returns what it threw, or HANDLED. @param {() => unknown} cleanup */
+function cleaned(cleanup) {
+  try {
+    cleanup();
+    return HANDLED;
+  } catch (error) {
+    return error;
+  }
 }
 
 /**
@@ -2052,10 +2086,16 @@ function commit(R, x) {
   R.owner = scope;
   R.ctx = scope.context;
   let result;
+  /** What the cleanup threw: the application runs all the same, and it is raised after. @type {any} */
+  let spoil = HANDLED;
   try {
-    if (typeof cleanup === 'function') cleanup();
+    if (typeof cleanup === 'function') spoil = cleaned(cleanup);
     if (dev) result = inspected(R, x, app, value);
     else result = app.run(value);
+  } catch (error) {
+    // Both failed: the cleanup's failure goes to the boundary, the application's is raised.
+    if (spoil !== HANDLED) failed(R, scope, spoil);
+    throw error;
   } finally {
     R.current = current;
     R.owner = owner;
@@ -2065,6 +2105,7 @@ function commit(R, x) {
     if (x.live >= ALIVE) x.cleanup = result;
     else untracked(R, /** @type {() => unknown} */ (result));
   }
+  if (spoil !== HANDLED) throw spoil;
 }
 
 /**

@@ -1301,6 +1301,36 @@ function count(R, id) {
   if (++R.runs[id] > LIMIT) throw new Error(`RRX: reactive cycle; an effect ran more than ${LIMIT} times in one flush`);
 }
 
+/** Runs a cleanup untracked; returns what it threw, or HANDLED. @param {Graph} R @param {() => unknown} cleanup */
+function cleaned(R, cleanup) {
+  try {
+    untracked(R, cleanup);
+    return HANDLED;
+  } catch (error) {
+    return error;
+  }
+}
+
+/**
+ * An effect's cleanup threw before its rerun, as core.js: the run is made
+ * all the same (here, counted once), then the cleanup's failure is raised,
+ * which the flush delivers. When the run fails too, the cleanup's failure
+ * goes to the boundary first and the run's is raised.
+ * @param {Graph} R @param {number} id @param {any} error @returns {never}
+ */
+function spoiled(R, id, error) {
+  const owner = R.owners[id];
+  R.runs[id]--;
+  try {
+    execute(R, id);
+  } catch (also) {
+    const left = deliver(R, owner, error);
+    if (left !== HANDLED) later(R, left);
+    throw also;
+  }
+  throw error;
+}
+
 /** @param {Graph} R @param {number} id */
 function execute(R, id) {
   if (R.live[id] !== ALIVE) return;
@@ -1312,7 +1342,10 @@ function execute(R, id) {
     const cleanup = R.cleanup[id];
     if (cleanup !== undefined) {
       R.cleanup[id] = undefined;
-      if (typeof cleanup === 'function') untracked(R, cleanup);
+      if (typeof cleanup === 'function') {
+        const spoil = cleaned(R, cleanup);
+        if (spoil !== HANDLED) spoiled(R, id, spoil);
+      }
     }
   }
   const current = R.current;
@@ -1381,9 +1414,18 @@ function commit(R, id) {
   R.owner = scope;
   R.ctx = scope === 0 ? null : R.context[scope];
   let result;
+  /** What the cleanup threw: the application runs all the same, and it is raised after. @type {any} */
+  let spoil = HANDLED;
   try {
-    if (typeof cleanup === 'function') cleanup();
+    if (typeof cleanup === 'function') spoil = cleaned(R, cleanup);
     result = R.apply[id](value);
+  } catch (error) {
+    // Both failed: the cleanup's failure goes to the boundary, the application's is raised.
+    if (spoil !== HANDLED) {
+      const left = deliver(R, scope, spoil);
+      if (left !== HANDLED) later(R, left);
+    }
+    throw error;
   } finally {
     R.current = current;
     R.owner = owner;
@@ -1393,6 +1435,7 @@ function commit(R, id) {
     if (R.gen[id] === gen && R.live[id] === ALIVE) R.cleanup[id] = result;
     else untracked(R, result);
   }
+  if (spoil !== HANDLED) throw spoil;
 }
 
 /** @param {Graph} R @param {number} id */
