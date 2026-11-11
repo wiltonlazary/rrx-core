@@ -265,11 +265,17 @@ function threshold(removal) {
  */
 function drop(root, owner, entry, retire) {
   if (retire) return $retire(entry);
+  // The row stops inside the list's computation, which is pure: lifted, its
+  // cleanups may write, as they may when the row is retired and swept.
+  const pure = root.pure;
+  root.pure = false;
   try {
     $stop(entry);
   } catch (error) {
     const left = $deliver(root, owner, error);
     if (left !== null) later(root, left);
+  } finally {
+    root.pure = pure;
   }
 }
 

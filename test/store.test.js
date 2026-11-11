@@ -472,6 +472,37 @@ describe('rrx-core lists and selection', () => {
     }
   });
 
+  it('lets the cleanups of a removed row write, as a retired row\'s do', () => {
+    for (const [name, map] of /** @type {const} */ ([
+      ['Keyed', (/** @type {any} */ root, /** @type {any} */ read, /** @type {any} */ build) => $keyed(root, read, null, (item) => build(() => $read(item)))],
+      ['Rows', (/** @type {any} */ root, /** @type {any} */ read, /** @type {any} */ build) => $rows(root, read, null, build)],
+      ['Positions', (/** @type {any} */ root, /** @type {any} */ read, /** @type {any} */ build) => $positions(root, read, (item) => build(() => $read(item)))],
+    ])) {
+      const root = $root('app');
+      const left = $signal(root, 0);
+      const log = $store(root, { gone: /** @type {number[]} */ ([]) });
+      const items = $signal(root, [1, 2, 3]);
+      const rows = map(root, () => $read(items), (/** @type {() => number} */ n) => {
+        const value = n();
+        $cleanup(/** @type {any} */ ($owner(root)), () => void $write(left, $read(left) + 1));
+        $effect(root, () => () => void $put(log, ['gone'], (/** @type {number[]} */ gone) => [...gone, value]));
+        return value;
+      });
+      /** @type {number[]} */
+      const counts = [];
+      $effect(root, () => void $read(rows));
+      $effect(root, () => void counts.push($read(left)));
+      const removed = name === 'Positions' ? 3 : 2;
+      $write(items, name === 'Positions' ? [1, 2] : [1, 3]);
+      $flush(root);
+      assert.deepEqual($read(rows), name === 'Positions' ? [1, 2] : [1, 3], name);
+      assert.equal($read(left), 1, `${name}: the scope cleanup's write landed`);
+      assert.deepEqual($raw(log).gone, [removed], `${name}: the effect cleanup's $put landed`);
+      assert.deepEqual(counts, [0, 1], `${name}: the readers of what the cleanups wrote ran`);
+      $dispose(root);
+    }
+  });
+
   it('merges and splits properties', () => {
     const merged = $merge([{ a: 1, b: 2 }, () => ({ b: 3 }), null]);
     assert.equal(merged('a'), 1);
