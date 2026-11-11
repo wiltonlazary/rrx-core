@@ -4,7 +4,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  $root, $signal, $read, $write, $memo, $flush, $dispose, $scope, $enter, $stop, $watch, $settled, $auto,
+  $root, $signal, $read, $write, $memo, $scan, $flush, $dispose, $scope, $enter, $stop, $watch, $settled, $auto,
   $lastReady, $pending, $rerun, $behind, $outcome, $discard, $task, $changing, $optimistic, $act,
 } from '../src/index.js';
 
@@ -162,6 +162,57 @@ describe('rrx-core async memos', () => {
     await pushes[1](1);
     assert.equal($read(feed), 201);
     assert.deepEqual(seen, ['pending:null', 'ready:101', 'ready:102', 'pending:102', 'ready:201']);
+    $dispose(root);
+  });
+
+  it('keeps the last ready value for $lastReady while the memo is failed, and through the next pending', async () => {
+    const root = $root('app');
+    $auto(root, true);
+    const id = $signal(root, 1);
+    /** @type {ReturnType<typeof deferred>[]} */
+    const calls = [];
+    const user = $memo(root, () => {
+      $read(id);
+      const d = deferred();
+      calls.push(d);
+      return d.promise;
+    });
+    $watch(root, () => $lastReady(user), () => {});
+    const settle = async (/** @type {boolean} */ ok, /** @type {any} */ value) => {
+      const d = /** @type {ReturnType<typeof deferred>} */ (calls.at(-1));
+      if (ok) d.resolve(value);
+      else d.reject(value);
+      await d.promise.catch(() => {});
+    };
+    assert.equal($lastReady(user), null, 'nothing has been ready');
+    await settle(true, 'a');
+    $write(id, 2);
+    assert.equal($lastReady(user), 'a', 'pending');
+    await settle(false, new Error('down'));
+    assert.throws(() => $read(user), /down/);
+    assert.equal($lastReady(user), 'a', 'failed: the last ready value is kept');
+    $write(id, 3);
+    assert.equal($pending(user), true);
+    assert.equal($lastReady(user), 'a', 'pending after a failure');
+    assert.equal($behind(user), true, 'a value has been ready');
+    await settle(false, new Error('down again'));
+    assert.equal($lastReady(user), 'a');
+    $write(id, 4);
+    await settle(true, 'b');
+    assert.equal($lastReady(user), 'b');
+    // A value that was never ready is not reported: neither a seed nor a first failure's.
+    const seeded = $scan(root, 'seed', () => {
+      $read(id);
+      const d = deferred();
+      calls.push(d);
+      return d.promise;
+    });
+    $watch(root, () => $lastReady(seeded), () => {});
+    await settle(false, new Error('never'));
+    assert.equal($lastReady(seeded), null);
+    $write(id, 5);
+    assert.equal($lastReady(seeded), null);
+    assert.equal($behind(seeded), false);
     $dispose(root);
   });
 

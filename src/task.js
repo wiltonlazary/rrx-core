@@ -513,7 +513,13 @@ export function $lastReady(source) {
     $read(source.node);
     return source.lastReady;
   }
-  return $outcome(source).value;
+  const outcome = $outcome(source);
+  // A failed memo keeps the value it had when it was last ready, as a failed task does.
+  if (outcome.status === 'failed' && typeof source !== 'function' && source.kind === 'memo') {
+    const e = source.extra;
+    if (e !== null && e.ready === 1) return source.value;
+  }
+  return outcome.value;
 }
 
 /**

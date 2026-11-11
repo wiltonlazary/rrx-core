@@ -302,6 +302,8 @@ class Extra {
     this.changes = 0;
     /** Those of them that end at the memo's next value. */
     this.nexts = 0;
+    /** The memo's value has been ready: set as it leaves that state, so a failed memo keeps it for $lastReady and a seed is never reported. */
+    this.ready = 0;
   }
 }
 
@@ -931,12 +933,16 @@ function settle(x, ok, value) {
     if (x.mode !== NONE) extra(x).failure = undefined;
     x.mode = VALUE;
     x.value = value;
-  } else if (value === WAITING) {
-    x.mode = WAITS;
-    extra(x).failure = waitedOn();
   } else {
-    x.mode = FAILURE;
-    extra(x).failure = value;
+    const e = extra(x);
+    if (x.mode === VALUE) e.ready = 1;
+    if (value === WAITING) {
+      x.mode = WAITS;
+      e.failure = waitedOn();
+    } else {
+      x.mode = FAILURE;
+      e.failure = value;
+    }
   }
 }
 
@@ -995,9 +1001,12 @@ function launched(R, x, value) {
   if (!quiet) {
     const was = x.mode;
     const held = was === WAITS && e.failure != null;
-    const kept = was === VALUE ? x.value : held ? e.failure.value : null;
+    if (was === VALUE) e.ready = 1;
+    // A failed memo keeps the value it had when it was last ready.
+    const fell = was === FAILURE && e.ready === 1;
+    const kept = was === VALUE || fell ? x.value : held ? e.failure.value : null;
     // `$behind`: the kept value has been ready once (a pending state it waited on says so too).
-    const behind = was === VALUE || (held && e.failure.behind === true);
+    const behind = was === VALUE || fell || (held && e.failure.behind === true);
     x.mode = WAITS;
     e.failure = { status: 'pending', value: kept, error: null, behind };
     x.version++;
@@ -1032,6 +1041,7 @@ function immediate(R, x, ok, value) {
     e.failure = undefined;
     x.value = value;
   } else {
+    if (x.mode === VALUE) e.ready = 1;
     x.mode = FAILURE;
     e.failure = value;
   }
@@ -1101,6 +1111,7 @@ function arrived(R, x, ticket, ok, value, done) {
   if (ok && e.changes > 0) {
     // Still changing: the new value is the latest, read as pending.
     x.value = value;
+    e.ready = 1;
     e.failure = { status: 'pending', value, error: null, behind: true };
   } else if (ok) {
     x.mode = VALUE;
@@ -1108,6 +1119,7 @@ function arrived(R, x, ticket, ok, value, done) {
     if (was === VALUE && (e.equals == null ? Object.is(previous, value) : same(e.equals, previous, value))) moved = false;
     else x.value = value;
   } else {
+    if (was === VALUE) e.ready = 1;
     x.mode = FAILURE;
     e.failure = value;
   }
@@ -1149,6 +1161,7 @@ export function beginChange(x, next) {
   if (next) e.nexts++;
   if (x.mode === VALUE) {
     x.mode = WAITS;
+    e.ready = 1;
     e.failure = { status: 'pending', value: x.value, error: null, behind: true };
     x.version++;
     if (x.subs !== null) propagate(R, x);
@@ -1237,6 +1250,7 @@ function outcome(R, x, ok, value, previous) {
     if (e.changes > 0) {
       x.value = value;
       x.mode = WAITS;
+      e.ready = 1;
       e.failure = { status: 'pending', value, error: null, behind: true };
       x.version++;
       return;
