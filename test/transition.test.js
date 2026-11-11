@@ -5,7 +5,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  $root, $signal, $read, $write, $memo, $render, $watch, $effect, $dispose, $auto, $batch, $task, $pending, $lastReady, $cancel, $flush, $catch, $outcome, $scope, $enter, $stop, $select, $mirror, $at,
+  $root, $signal, $read, $write, $memo, $render, $watch, $effect, $dispose, $auto, $batch, $task, $pending, $lastReady, $cancel, $flush, $catch, $outcome, $scope, $enter, $stop, $select, $mirror, $at, $load,
 } from '../src/index.js';
 import { peekCount } from '../src/core.js';
 
@@ -72,6 +72,26 @@ describe('rrx-core transitions', () => {
     assert.deepEqual(screen, ['pending=true', 'typed=2'], 'the indicators show the change in flight');
     await answer(2, 'grace');
     assert.deepEqual(screen, ['pending=true', 'typed=2', 'pending=false', 'latest=grace#2', 'user=grace#2']);
+    $dispose(root);
+  });
+
+  it('applies at once what reads a status through a memo: $load, a memo of $pending', async () => {
+    const { root, id, user, answer } = app();
+    /** @type {string[]} */
+    const screen = [];
+    const load = $load(root, () => $read(user));
+    const waiting = $memo(root, () => $pending(user));
+    const name = $memo(root, () => $read(user).toUpperCase());
+    $render(root, () => $read(load).status, v => void screen.push(`load=${v}`));
+    $render(root, () => $read(waiting), v => void screen.push(`waiting=${v}`));
+    await answer(1, 'ada');
+    $render(root, () => $read(user), v => void screen.push(`user=${v}`));
+    $render(root, () => $read(name), v => void screen.push(`name=${v}`));
+    screen.length = 0;
+    $write(id, 2);
+    assert.deepEqual(screen, ['load=pending', 'waiting=true'], 'the pending state shows while the transition holds the rest');
+    await answer(2, 'grace');
+    assert.deepEqual(screen, ['load=pending', 'waiting=true', 'load=ready', 'waiting=false', 'user=grace#2', 'name=GRACE#2']);
     $dispose(root);
   });
 

@@ -129,7 +129,8 @@ Some points worth knowing:
   order, so the screen never mixes the new state with the old (the graph
   holds a consistent state). Reads in code see the newest state at
   once. Observers whose latest run read `$pending`, `$behind`,
-  `$lastReady` or `$outcome` are indicators and apply at once. An update that
+  `$lastReady` or `$outcome`, themselves or through a memo they read
+  (`$load`), are indicators and apply at once. An update that
   touches parked work, or resumes a suspended observer, joins its transition
   (an update touching two merges them); unrelated updates apply as usual,
   and plain `$effect`s are never held. A suspended observer that stops no

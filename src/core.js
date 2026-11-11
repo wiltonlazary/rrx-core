@@ -304,6 +304,8 @@ class Extra {
     this.nexts = 0;
     /** The memo's value has been ready: set as it leaves that state, so a failed memo keeps it for $lastReady and a seed is never reported. */
     this.ready = 0;
+    /** A memo's run read a status or a latest value (peeked): 2 while that run is on, 1 once it is the latest run, 0 after a run that read none. */
+    this.peek = 0;
   }
 }
 
@@ -1237,7 +1239,11 @@ export function requery(x) {
  */
 function outcome(R, x, ok, value, previous) {
   const e = x.extra;
-  if (e !== null && e.flight !== NONE) superseded(R, x);
+  if (e !== null) {
+    if (e.flight !== NONE) superseded(R, x);
+    // The run that ends here is the latest: its indicator read stays, an earlier run's lapses.
+    if (e.peek !== 0) e.peek >>= 1;
+  }
   if (ok && typeof value === 'object' && value !== null && awaited(value)) {
     launched(R, x, value);
     return;
@@ -2413,14 +2419,32 @@ export function resume(x, stopping) {
 /**
  * The running Watch or Render read a status or a latest value (for sibling
  * modules: $pending, $behind, $lastReady): it is an indicator, applied at once
- * even while a transition holds the rest.
+ * even while a transition holds the rest. A memo that reads one passes it
+ * on: the Watch or Render that reads the memo directly is an indicator too
+ * (`$load`, a memo of `$pending`); a task's state does not.
  */
 export function peeked() {
   const R = running;
   if (R === null) return;
   peeks++;
   const x = R.current;
-  if (x !== null && x.apply !== null && x.k === EFFECT) x.apply.peek = x.version;
+  if (x === null) return;
+  if (x.apply !== null) {
+    if (x.k === EFFECT) x.apply.peek = x.version;
+  } else if (x.k === MEMO) extra(x).peek = 2;
+}
+
+/**
+ * True when a memo the observer read in its latest run read a status in its
+ * own (peeked): what shows such a memo is an indicator. Asked only where an
+ * application would be parked. @param {Node<any>} x
+ */
+function indicated(x) {
+  for (let l = x.deps; l !== null; l = l.nextDep) {
+    const e = l.dep.extra;
+    if (e !== null && e.peek !== 0) return true;
+  }
+  return false;
 }
 
 /** Indicator reads so far: a renderer compares it around a computation of its own (for sibling modules). */
@@ -2619,8 +2643,8 @@ function drainApplies(R, renders) {
     const app = x.apply;
     const lane = app.applying;
     if (lane === 0) continue;
-    // Held: parked in the transition, unless its latest run read a status (an indicator).
-    if (flow !== null && app.peek !== x.version) {
+    // Held: parked in the transition, unless its latest run read a status, or a memo that read one (an indicator).
+    if (flow !== null && app.peek !== x.version && !indicated(x)) {
       if (app.parked !== flow) {
         app.parked = flow;
         flow.parked.push(x);
