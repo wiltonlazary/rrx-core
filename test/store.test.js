@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   $root, $signal, $read, $write, $memo, $effect, $watch, $flush, $dispose, $scope, $enter, $stop, $stats, $cleanup, $kind,
   $store, $at, $put, $raw, $reuse, $update, $mirror, $overlay, $keyed, $rows, $positions, $select, $merge, $split,
-  $catch, $owner, $batch, $auto, $cancel, $discard, $touch,
+  $catch, $owner, $batch, $auto, $cancel, $discard, $touch, $untrack,
 } from '../src/index.js';
 
 describe('rrx-core stores', () => {
@@ -591,6 +591,49 @@ describe('rrx-core lists and selection', () => {
       assert.equal($read(left), 1, `${name}: the scope cleanup's write landed`);
       assert.deepEqual($raw(log).gone, [removed], `${name}: the effect cleanup's $put landed`);
       assert.deepEqual(counts, [0, 1], `${name}: the readers of what the cleanups wrote ran`);
+      $dispose(root);
+    }
+  });
+
+  it('lets a row\'s build, and the first run of an effect it makes, write', () => {
+    for (const [name, map] of /** @type {const} */ ([
+      ['Keyed', (/** @type {any} */ root, /** @type {any} */ read, /** @type {any} */ build) => $keyed(root, read, null, (item) => build(() => $read(item)))],
+      ['Rows', (/** @type {any} */ root, /** @type {any} */ read, /** @type {any} */ build) => $rows(root, read, null, build)],
+      ['Positions', (/** @type {any} */ root, /** @type {any} */ read, /** @type {any} */ build) => $positions(root, read, (item) => build(() => $read(item)))],
+    ])) {
+      const root = $root('app');
+      const built = $signal(root, 0);
+      const log = $store(root, { seen: /** @type {number[]} */ ([]) });
+      const last = $signal(root, 0);
+      const items = $signal(root, [1, 2]);
+      const rows = map(root, () => $read(items), (/** @type {() => number} */ n) => {
+        $write(built, $untrack(root, () => $read(built)) + 1);
+        const value = $untrack(root, n);
+        $put(log, ['seen'], (/** @type {number[]} */ seen) => [...seen, value]);
+        $effect(root, () => void $write(last, n()));
+        return value;
+      });
+      /** @type {number[]} */
+      const counts = [];
+      $effect(root, () => void $read(rows));
+      $effect(root, () => void counts.push($read(built)));
+      $flush(root);
+      assert.deepEqual($read(rows), [1, 2], name);
+      assert.equal($read(built), 2, `${name}: the builds' writes landed`);
+      assert.deepEqual($raw(log).seen, [1, 2], `${name}: the builds' $put landed`);
+      assert.equal($read(last), 2, `${name}: an effect's first run wrote`);
+      // A row added by a later update builds the same way.
+      $write(items, [1, 2, 3]);
+      $flush(root);
+      assert.deepEqual($read(rows), [1, 2, 3], name);
+      assert.deepEqual($raw(log).seen, [1, 2, 3], name);
+      assert.equal($read(last), 3, name);
+      assert.deepEqual(counts, [2, 3], `${name}: the readers of what the builds wrote ran`);
+      // The list's own read stays pure, and so does the memo around a build.
+      const guarded = $keyed(root, () => ($write(built, 0), [1]), null, () => 1);
+      assert.throws(() => $read(guarded), /cannot write/, `${name}: the list's read is still pure`);
+      const after = $memo(root, () => ($read(rows), $write(built, 0)));
+      assert.throws(() => $read(after), /cannot write/, `${name}: a computation that read the list is still pure`);
       $dispose(root);
     }
   });

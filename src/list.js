@@ -321,7 +321,8 @@ function rowsSame(old, next) {
 /**
  * Maps a list to rows that persist by key: `build(item, index)`
  * runs once per key in its own scope, and a later list moves or updates the
- * row through its item and index signals. Removed keys stop their rows. A
+ * row through its item and index signals. `build` and the effects it makes
+ * may write. Removed keys stop their rows. A
  * null key uses each item as its own key (For by identity). A `build` that
  * declares one parameter gets no index signal. `{ retire: true }` retires
  * removed rows (`$retire`) instead of stopping them; `{ retire: n }` retires
@@ -386,6 +387,11 @@ function keyed(root, read, key, build, lazy, limit) {
     /** Each kept row at its new position (none on a first pass). @type {(Row<T, U> | undefined)[] | null} */
     const moved = rows.size === 0 ? null : new Array(items.length);
     let kept = 0;
+    // The rows build inside this computation, which is pure: the pass runs
+    // lifted (once, not per row), so a build and the first run of each effect
+    // it makes may write, as those effects may on every later run.
+    const pure = root.pure;
+    root.pure = false;
     try {
       // The kept rows take their items and places only once the whole pass
       // succeeded (every key unique, every build done), so a failed update
@@ -411,9 +417,11 @@ function keyed(root, read, key, build, lazy, limit) {
       // The update fails whole: the rows this pass built stop (a row whose
       // build threw stopped itself), and the list keeps its current rows,
       // unless this update already retired them all (see above).
+      root.pure = pure;
       for (const [built, entry] of next) if (rows.get(built) !== entry) drop(root, owner, entry, false);
       throw error;
     }
+    root.pure = pure;
     for (let position = 0; kept > 0 && position < items.length; position++) {
       const old = /** @type {(Row<T, U> | undefined)[]} */ (moved)[position];
       if (old === undefined) continue;
@@ -470,13 +478,18 @@ export function $positions(root, read, build, removal) {
     for (let position = count; position < rows.length; position++) drop(root, owner, rows[position], retire);
     const next = rows.slice(0, kept);
     if (kept < count && box === null) box = container(root, owner);
+    // The builds run lifted, as a keyed list's do.
+    const pure = root.pure;
+    root.pure = false;
     try {
       for (let position = kept; position < count; position++) next.push(row(root, box, items[position], position, build));
     } catch (error) {
+      root.pure = pure;
       // The rows this pass built stop (a row whose build threw stopped itself).
       for (let position = kept; position < next.length; position++) drop(root, owner, next[position], false);
       throw error;
     }
+    root.pure = pure;
     // The kept rows take their items only once every build succeeded, so a
     // failed update leaves them as they were.
     for (let position = 0; position < kept; position++) $write(rows[position].item, items[position]);
