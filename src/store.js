@@ -8,7 +8,7 @@
 // Descendant subtrees whose reference did not change are skipped: every cell
 // below them would be written its own value (README §Design choices).
 
-import { $signal, $read, $write, $watch, $memo, $untrack, $equals, $whenUnwatched, $discard, $unowned, hold, unhold, live, $update as change, Graph, pull } from './core.js';
+import { $signal, $read, $write, $watch, $memo, $untrack, $equals, $whenUnwatched, $discard, $unowned, $observer, hold, unhold, live, $update as change, Graph, pull } from './core.js';
 import { isContext } from './context.js';
 
 /** @typedef {string | number} Key */
@@ -348,7 +348,15 @@ export function preserve(a, b) {
  */
 export function $mirror(root, derive) {
   const store = $store(root, /** @type {T} */ (/** @type {unknown} */ (null)));
-  const { observer } = $watch(root, derive, value => {
+  // The Watch keeps the store, it shows nothing: its run is stamped as an
+  // indicator's is (without counting as an indicator read of the code that
+  // made the mirror), so a transition never parks it and the plain effects
+  // that read the store are never held.
+  const { observer } = $watch(root, () => {
+    const x = $observer(root);
+    if (x !== null && x.apply !== null) x.apply.peek = x.version;
+    return derive();
+  }, value => {
     $put(store, [], old => preserve(old, value));
   });
   // Inside a batch or a flush the first value would wait for the flush; it

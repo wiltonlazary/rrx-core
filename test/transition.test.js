@@ -5,8 +5,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  $root, $signal, $read, $write, $memo, $render, $watch, $effect, $dispose, $auto, $batch, $task, $pending, $lastReady, $cancel, $flush, $catch, $outcome, $scope, $enter, $stop,
+  $root, $signal, $read, $write, $memo, $render, $watch, $effect, $dispose, $auto, $batch, $task, $pending, $lastReady, $cancel, $flush, $catch, $outcome, $scope, $enter, $stop, $select, $mirror, $at,
 } from '../src/index.js';
+import { peekCount } from '../src/core.js';
 
 function deferred() {
   /** @type {(value: any) => void} */ let resolve = () => {};
@@ -208,6 +209,27 @@ describe('rrx-core transitions', () => {
     done[1]({ ok: true, value: 'two' });
     $flush(root);
     assert.deepEqual(screen, ['effect=2', 'id=2', 'task=two']);
+    $dispose(root);
+  });
+
+  it('never holds the plain effects that read a $select or a $mirror', async () => {
+    const { root, id, user, answer } = app();
+    await answer(1, 'ada');
+    const peeks = peekCount();
+    const selected = $select(root, () => $read(id));
+    const mirror = $mirror(root, () => ({ id: $read(id) }));
+    assert.equal(peekCount(), peeks, 'making them is no indicator read of the code that makes them (a renderer counts those)');
+    /** @type {string[]} */
+    const screen = [];
+    $render(root, () => $read(user), v => void screen.push(`user=${v}`));
+    $effect(root, () => void screen.push(`selected=${selected(2)}`));
+    $effect(root, () => void screen.push(`mirror=${$at(mirror, ['id'])}`));
+    $render(root, () => selected(2), v => void screen.push(`shown=${v}`));
+    screen.length = 0;
+    $write(id, 2);
+    assert.deepEqual(screen, ['selected=true', 'mirror=2'], 'the effects follow at once; the Render waits with the user');
+    await answer(2, 'grace');
+    assert.deepEqual(screen, ['selected=true', 'mirror=2', 'user=grace#2', 'shown=true']);
     $dispose(root);
   });
 

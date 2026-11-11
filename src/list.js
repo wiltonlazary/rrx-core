@@ -1,7 +1,7 @@
 // Selection, props helpers and list mapping.
 
 import {
-  $signal, $read, $write, $memo, $watch, $untrack, $equals, $discard, $writable, $observers,
+  $signal, $read, $write, $memo, $watch, $untrack, $equals, $discard, $writable, $observers, $observer,
   $stop, $cleanup, $owner, live, ScopeNode, $within, $attach, $deliver, later, $retire, $scope, $after,
 } from './core.js';
 
@@ -33,7 +33,15 @@ export function $select(root, source) {
     const b = entries.get(next);
     if (b !== undefined) $write(b, true);
   };
-  $watch(R, source, () => sync());
+  // The Watch keeps the keys' signals, it shows nothing: its run is stamped
+  // as an indicator's is (without counting as an indicator read of the code
+  // that made the selection), so a transition never parks it and the plain
+  // effects that read the keys are never held.
+  $watch(R, () => {
+    const x = $observer(R);
+    if (x !== null && x.apply !== null) x.apply.peek = x.version;
+    return source();
+  }, () => sync());
   // The keys live on the root (no hook per key) but end with the owner that
   // made the reader; a sweep due after that finds the table empty.
   const made = $owner(R);
