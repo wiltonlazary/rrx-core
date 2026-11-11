@@ -1180,15 +1180,36 @@ export function endChange(x, next) {
   if (R.auto) automatic(R);
 }
 
-/** Marks a memo's next async run a quiet rerun and invalidates it (for sibling modules: $rerun). @param {Node<any>} x */
+/**
+ * Marks a memo's next async run a quiet rerun and invalidates it (for sibling
+ * modules: $rerun). Only a memo that is up to date reruns quietly: one whose
+ * input may have changed runs for that input, which reads pending.
+ * @param {Node<any>} x
+ */
 export function requery(x) {
   if (x.k !== MEMO || x.live === FREED) return;
+  const R = x.root;
+  // $rerun runs the work now, as a task's does, when something reads the memo.
+  const now = x.watchers > 0 && R.current === null;
+  if (x.state !== CLEAN) {
+    // Not read now: it runs at its next read, as for a changed input.
+    if (!now) {
+      x.state = DIRTY;
+      return;
+    }
+    const dirty = x.state === DIRTY;
+    const ticket = x.extra === null ? 0 : x.extra.ticket;
+    refresh(R, x);
+    // Brought up to date by a run for the changed input: that run is the rerun.
+    if (dirty || (x.extra !== null && x.extra.ticket !== ticket)) {
+      if (R.auto) automatic(R);
+      return;
+    }
+  }
   // Only a memo that has been async runs quietly; a plain memo just recomputes.
   if (x.extra !== null && x.extra.ticket > 0) x.extra.quiet = 1;
   $invalidate(x);
-  // $rerun runs the work now, as a task's does, when something reads the memo.
-  const R = x.root;
-  if (x.watchers > 0 && R.current === null) {
+  if (now) {
     refresh(R, x);
     if (R.auto) automatic(R);
   }
@@ -1208,6 +1229,8 @@ function outcome(R, x, ok, value, previous) {
     launched(R, x, value);
     return;
   }
+  // A rerun answered without async work is over: the next async run is not its quiet one.
+  if (e !== null && e.quiet !== 0) e.quiet = 0;
   if (e !== null && e.changes > 0 && ok) {
     // A new value ends the change marks that wait for it; the others keep it pending.
     ended(e);

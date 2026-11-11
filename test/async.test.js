@@ -189,6 +189,63 @@ describe('rrx-core async memos', () => {
     $dispose(root);
   });
 
+  it('reruns a memo whose input changed as a new input: it reads pending', async () => {
+    const root = $root('app');
+    const id = $signal(root, 1);
+    /** @type {ReturnType<typeof deferred>[]} */
+    const calls = [];
+    const list = $memo(root, () => {
+      $read(id);
+      const d = deferred();
+      calls.push(d);
+      return d.promise;
+    });
+    $watch(root, () => $outcome(list), () => {});
+    calls[0].resolve('a');
+    await calls[0].promise;
+    $flush(root);
+    assert.equal($read(list), 'a');
+    $write(id, 2);
+    $rerun(list);
+    assert.equal(calls.length, 2, 'the work runs once, for the new input');
+    assert.equal($pending(list), true, 'a new input reads pending');
+    assert.equal($lastReady(list), 'a');
+    calls[1].resolve('b');
+    await calls[1].promise;
+    assert.equal($read(list), 'b');
+    $rerun(list);
+    assert.equal(calls.length, 3);
+    assert.equal($pending(list), false, 'the same input reruns quietly');
+    $dispose(root);
+  });
+
+  it('ends a quiet rerun that answers synchronously: the next input reads pending', async () => {
+    const root = $root('app');
+    $auto(root, true);
+    const id = $signal(root, 1);
+    let cached = false;
+    /** @type {ReturnType<typeof deferred>[]} */
+    const calls = [];
+    const list = $memo(root, () => {
+      $read(id);
+      if (cached) return 'cached';
+      const d = deferred();
+      calls.push(d);
+      return d.promise;
+    });
+    $watch(root, () => $outcome(list), () => {});
+    calls[0].resolve('a');
+    await calls[0].promise;
+    cached = true;
+    $rerun(list);
+    assert.equal($read(list), 'cached', 'the rerun answered at once');
+    cached = false;
+    $write(id, 2);
+    assert.equal(calls.length, 2);
+    assert.equal($pending(list), true, 'a new input reads pending');
+    $dispose(root);
+  });
+
   it('reruns a task quietly too; a changed input still reads pending', () => {
     const root = $root('app');
     const id = $signal(root, 1);
