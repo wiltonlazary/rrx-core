@@ -211,12 +211,20 @@ for (const [name, g] of /** @type {[string, any][]} */ ([['records', records], [
     it('reports a self-triggering effect as a cycle', () => {
       const root = $root('app');
       const s = $signal(root, 0);
+      let looping = true;
+      const seen = [];
       $effect(root, () => {
         const v = $read(s);
-        if (v > 0) $write(s, v + 1);
+        seen.push(v);
+        if (looping && v > 0) $write(s, v + 1);
       });
       $write(s, 1);
       assert.throws(() => $flush(root), /reactive cycle/);
+      // The reported effect is not lost: a later write runs it again.
+      looping = false;
+      $write(s, -1);
+      $flush(root);
+      assert.equal(seen.at(-1), -1, 'the effect runs again after the cycle was reported');
       $dispose(root);
     });
 

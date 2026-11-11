@@ -1967,6 +1967,8 @@ function applies(R, x, app) {
 /** @param {Graph} R @param {Node<any>} x */
 function execute(R, x) {
   if (x.live < ALIVE) return;
+  // Clean before the cycle check: an effect reported as a cycle is queued again by a later write.
+  x.state = CLEAN;
   // One field counts the runs of this flush: serials step by STRIDE, more
   // than LIMIT, so a count left from an earlier flush is below the serial.
   const serial = R.serialAll;
@@ -1974,7 +1976,6 @@ function execute(R, x) {
   if (runs < serial) runs = serial;
   if (++runs - serial > LIMIT) cycled();
   x.version = runs;
-  x.state = CLEAN;
   const app = x.apply;
   if (app === null && x.cleanup !== undefined) rerun(R, x);
   const current = R.current;

@@ -1304,8 +1304,9 @@ function count(R, id) {
 /** @param {Graph} R @param {number} id */
 function execute(R, id) {
   if (R.live[id] !== ALIVE) return;
-  count(R, id);
+  // Clean before the cycle check: an effect reported as a cycle is queued again by a later write.
   R.state[id] = CLEAN;
+  count(R, id);
   const phase = R.phase[id];
   if (phase === 0) {
     const cleanup = R.cleanup[id];
